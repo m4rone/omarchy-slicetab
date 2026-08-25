@@ -199,4 +199,5 @@ Then delete the three `m4rone.slicetab` bindings from
 
 ## Licence
 
-MIT.
+MIT. Carousel visuals derived from Omarchy's image picker (MIT,
+© David Heinemeier Hansson).

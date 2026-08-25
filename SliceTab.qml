@@ -345,7 +345,7 @@ Item {
   function clearBurstRestoreState(token) {
     if (!isBurstToken(token)) return
     Quickshell.execDetached(hyprEval(
-      "(function() local s = _G.__m4rone_altswitch;" +
+      "(function() local s = _G.__m4rone_slicetab;" +
       " if type(s) == 'table' and s.owner == '" + root.watchOwner + "'" +
       "    and (s.token == '" + token + "' or s.cancel_token == '" + token + "') then" +
       root.luaStopTimer("s") +
@@ -470,7 +470,7 @@ Item {
   }
 
   IpcHandler {
-    target: "m4rone.altswitch"
+    target: "m4rone.slicetab"
 
     // Two names for one body, and they must stay that way. Direction is
     // Hyprland's business: the stock binding has already cycled forward or
@@ -544,7 +544,7 @@ Item {
   function cancelKeyCommand(token) {
     if (!isBurstToken(token)) return ["true"]
     return hyprEval(
-      "(function() local s = _G.__m4rone_altswitch;" +
+      "(function() local s = _G.__m4rone_slicetab;" +
       " if type(s) ~= 'table' or s.owner ~= '" + root.watchOwner + "'" +
       "    or s.token ~= '" + token + "' then return false end;" +
       // Two Escape routes exist and either can arrive first, because the key is
@@ -626,14 +626,14 @@ Item {
   // process from before a hot reload must never replace the newer owner and
   // arm an old watcher -- hence the epoch.
   readonly property string luaAdoptState:
-    " local s = _G.__m4rone_altswitch;" +
+    " local s = _G.__m4rone_slicetab;" +
     " if type(s) ~= 'table' then s = {} end;" +
     " if s.owner ~= '" + watchOwner + "' then" +
     "   if type(s.epoch) == 'number' and s.epoch >= " + watchEpoch + " then return false end;" +
     luaStopTimer("s") +
     "   s = {}; s.owner = '" + watchOwner + "'; s.epoch = " + watchEpoch +
     " end;" +
-    " _G.__m4rone_altswitch = s;"
+    " _G.__m4rone_slicetab = s;"
 
   // Deliberately no luaAdoptState: a restore must reject foreign, stale, or
   // already-cleared state rather than adopting it.
@@ -651,7 +651,7 @@ Item {
     }
     return hyprEval(
       "(function()" +
-      " local s = _G.__m4rone_altswitch;" +
+      " local s = _G.__m4rone_slicetab;" +
       " if type(s) ~= 'table' or s.owner ~= '" + root.watchOwner + "' then return false end;" +
       // The Escape freeze in the timer is the only writer of cancel_*, so this
       // one test establishes both the sequence and the types. The four locals
@@ -793,7 +793,7 @@ Item {
       " if s.timer ~= nil then reusable = pcall(function() s.timer:set_enabled(false) end) end;" +
       " if not reusable then" +
       "   s.timer = hl.timer(function()" +
-      "     local c = _G.__m4rone_altswitch; if not c or not c.timer then return end;" +
+      "     local c = _G.__m4rone_slicetab; if not c or not c.timer then return end;" +
       // Escape first: anyone cancelling does not want the following release to
       // count as a selection. is_key_down reads the physical key, so Escape also
       // reaches the window underneath; that is the price of not grabbing keys.
@@ -806,7 +806,7 @@ Item {
       "       c.cancel_workspace_name = c.start_workspace_name;" +
       root.luaClearBurst("c") +
       "       c.stopped_token = t; c.timer:set_enabled(false);" +
-      "       hl.exec_cmd('omarchy-shell -q m4rone.altswitch cancel ' .. t);" +
+      "       hl.exec_cmd('omarchy-shell -q m4rone.slicetab cancel ' .. t);" +
       "       return" +
       "     end;" +
       // Alt still down. This is where a hold is told apart from a tap: count
@@ -820,7 +820,7 @@ Item {
       "         if c.ticks >= " + root.revealDelayTicks +
       "            and type(c.burst) == 'string' and c.burst ~= '' then" +
       "           c.revealed = true;" +
-      "           hl.exec_cmd('omarchy-shell -q m4rone.altswitch reveal ' .. c.burst)" +
+      "           hl.exec_cmd('omarchy-shell -q m4rone.slicetab reveal ' .. c.burst)" +
       "         end" +
       "       end;" +
       "       return" +
@@ -828,7 +828,7 @@ Item {
       "     local t = c.token; c.stopped_token = t; c.timer:set_enabled(false);" +
       root.luaClearBurst("c") +
       root.luaClearCancel("c") +
-      "     hl.exec_cmd('omarchy-shell -q m4rone.altswitch release ' .. t)" +
+      "     hl.exec_cmd('omarchy-shell -q m4rone.slicetab release ' .. t)" +
       "   end, { timeout = 50, type = 'repeat' });" +
       // A timer that already stopped this token must not be re-enabled by a late
       // watcher process from that same Tab.
@@ -847,10 +847,10 @@ Item {
       : "s.owner ~= '" + root.watchOwner + "' and (type(s.epoch) ~= 'number' or s.epoch < "
         + root.watchEpoch + ")"
     Quickshell.execDetached(hyprEval(
-      "(function() local s = _G.__m4rone_altswitch;" +
+      "(function() local s = _G.__m4rone_slicetab;" +
       " if type(s) == 'table' and " + guard + " then" +
       root.luaStopTimer("s") +
-      "   _G.__m4rone_altswitch = nil" +
+      "   _G.__m4rone_slicetab = nil" +
       " end; return true end)()"))
   }
 
@@ -1059,7 +1059,7 @@ Item {
     visible: root.opened && root.revealed && root.count > 0 && root.targetScreen !== null
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
-    WlrLayershell.namespace: "m4rone-altswitch"
+    WlrLayershell.namespace: "m4rone-slicetab"
     WlrLayershell.layer: WlrLayer.Overlay
     // No keyboard grab, which is the pivot of the design. With the keyboard
     // grabbed, Hyprland refused to move window focus and nothing switched --

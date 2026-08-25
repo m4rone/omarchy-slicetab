@@ -1,4 +1,4 @@
-# Window Switcher
+# SliceTab
 
 Alt-Tab for Omarchy, with a preview of every window and a live view of the
 selected one.
@@ -53,15 +53,15 @@ change.
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/m4rone/omarchy-window-switcher.git --enable
+omarchy plugin add https://github.com/m4rone/omarchy-slicetab.git --enable
 ```
 
 Then add the notification actions below to `~/.config/hypr/bindings.lua`:
 
 ```lua
-o.bind("ALT + TAB", "Show window switcher", "omarchy-shell -q m4rone.altswitch next")
-o.bind("ALT + SHIFT + TAB", "Show window switcher", "omarchy-shell -q m4rone.altswitch prev")
-o.bind("ALT + ESCAPE", "Cancel window switcher", "omarchy-shell -q m4rone.altswitch cancelKey")
+o.bind("ALT + TAB", "Show SliceTab", "omarchy-shell -q m4rone.slicetab next")
+o.bind("ALT + SHIFT + TAB", "Show SliceTab", "omarchy-shell -q m4rone.slicetab prev")
+o.bind("ALT + ESCAPE", "Cancel SliceTab", "omarchy-shell -q m4rone.slicetab cancelKey")
 ```
 
 The third line is optional and strongly recommended. Add it and skip the rest of

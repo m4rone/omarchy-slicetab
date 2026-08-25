@@ -46,6 +46,54 @@ Item {
   property int fallbackAltTicks: 0
   property int selectedIndex: 0
 
+  // Injected by omarchy-shell after load. Both stay null under a host that
+  // does not provide them, and every read below survives that.
+  property var shell: null
+  property var manifest: null
+
+  // The hold modifier is configurable because the key bindings are: a user
+  // who binds SUPER + TAB holds Super, and a watcher that polls Alt would
+  // close the row on its first tick. The value comes from this plugin's entry
+  // in ~/.config/omarchy/shell.json:
+  //   { "id": "m4rone.slicetab", "modifier": "SUPER" }
+  // Only a name from this table is accepted; anything else falls back to ALT.
+  // The two key names are the only thing that ever reaches Lua, and they can
+  // only come from this table -- the config string itself never does.
+  readonly property var holdKeysByModifier: ({
+    "ALT": ["Alt_L", "Alt_R"],
+    "SUPER": ["Super_L", "Super_R"],
+    "CTRL": ["Control_L", "Control_R"],
+    "SHIFT": ["Shift_L", "Shift_R"]
+  })
+  readonly property string configuredModifier: {
+    var config = shell && shell.shellConfig ? shell.shellConfig : null
+    var id = manifest && manifest.id ? String(manifest.id) : "m4rone.slicetab"
+    var entries = config && Array.isArray(config.plugins) ? config.plugins : []
+    for (var i = 0; i < entries.length; i++) {
+      if (!entries[i] || String(entries[i].id) !== id) continue
+      var name = String(entries[i].modifier || "").toUpperCase()
+      return holdKeysByModifier[name] ? name : "ALT"
+    }
+    return "ALT"
+  }
+  readonly property var holdKeys: holdKeysByModifier[configuredModifier]
+
+  // A row built under the old modifier is stale; only close it. The armed
+  // compositor timer is NOT cleaned up from here: a detached cleanup can time
+  // out (old keys survive in the reused closure) or land late and kill the
+  // state of a burst that started meanwhile. The arm handles it in-band
+  // instead -- it records the polled keys in the compositor state and refuses
+  // to reuse a timer whose keys no longer match.
+  onConfiguredModifierChanged: {
+    if (hasLiveRow()) close()
+  }
+
+  // False only after the startup probe has positively answered that this
+  // Hyprland lacks the Lua API the watcher needs (hl.is_key_down and
+  // hl.timer, both 0.56+). A timeout or garbled answer never disables:
+  // transient IPC trouble must not turn the plugin off.
+  property bool hyprApiSupported: true
+
   property var windows: []
   property string currentWorkspace: ""
   property var currentWorkspaceId: null
@@ -306,6 +354,7 @@ Item {
   // during a read is not coalesced: the intermediate result is discarded and
   // the newest request reads again.
   function open(payloadJson) {
+    if (!hyprApiSupported) return
     requestWindows()
     safetyTimer.restart()
   }
@@ -450,6 +499,41 @@ Item {
     if (Hyprland.activeToplevel)
       root.observedActiveAddress = root.observedAddress(Hyprland.activeToplevel.address)
     cleanupAltWatch(false)
+    apiProbe.running = true
+  }
+
+  // README requires Hyprland 0.56 or newer, and this probe enforces it. On an
+  // older compositor the watcher arm fails AND the fallback probe errors on
+  // every 50 ms tick, forever -- a silent process loop. One question at
+  // startup prevents that; on a definite "false" the entry points below
+  // disable themselves and say so once. Native Alt-Tab is untouched either
+  // way: it lives in the stock bindings.
+  Process {
+    id: apiProbe
+    command: root.hyprEval(
+      "error('api=' .. tostring(type(hl.is_key_down) == 'function'" +
+      " and type(hl.timer) == 'function'))")
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var answer = String(text || "").trim().match(/:\s*api=(true|false)$/)
+        if (!answer) return
+        root.hyprApiSupported = answer[1] === "true"
+        if (!root.hyprApiSupported) {
+          // A press can land before this answer and start the burst plus the
+          // failing 50 ms fallback loop. The gates below only stop NEW bursts,
+          // so tear down everything that already runs as well.
+          root.close()
+          console.warn("m4rone.slicetab: Hyprland is missing hl.is_key_down/" +
+            "hl.timer (added in 0.56); the switcher overlay is disabled. " +
+            "Native Alt-Tab keeps working.")
+          Quickshell.execDetached(["notify-send", "-a", "Window Switcher",
+            "Window Switcher disabled",
+            "This Hyprland is older than 0.56 (no hl.is_key_down). " +
+            "Native Alt-Tab keeps working; the preview row will not appear."])
+        }
+      }
+    }
   }
   Component.onDestruction: cleanupAltWatch(true)
 
@@ -577,6 +661,7 @@ Item {
   }
 
   function notifyNativeCycle() {
+    if (!root.hyprApiSupported) return
     var newBurst = !root.burstToken
     root.burstSequence = (root.burstSequence + 1) % 1000000000
     root.burstToken = root.watchOwner + "-" + root.burstSequence
@@ -604,6 +689,13 @@ Item {
   // The same idea appeared in four chunks, spelled slightly differently each
   // time. Each idea now appears once; `v` is the state table's name at that
   // point (`s` in the chunks themselves, `c` inside the timer closure).
+
+  // The one place the configured hold keys become Lua. holdKeys only ever
+  // holds literals from holdKeysByModifier, so this stays inside the rule
+  // that nothing reaches Lua ungated.
+  function luaHoldKeyTest() {
+    return "hl.is_key_down('" + holdKeys[0] + "') or hl.is_key_down('" + holdKeys[1] + "')"
+  }
 
   // A config reload clears C++ timers but leaves this Lua global behind.
   // pcall distinguishes such expired userdata from a live timer.
@@ -787,11 +879,21 @@ Item {
       "     s.start_workspace_id = w.workspace.id; s.start_workspace_name = w.workspace.name" +
       "   end" +
       " end;" +
-      // Same pcall trick as luaStopTimer, but here the result answers
-      // "can I reuse this timer?".
+      // Same pcall trick as luaStopTimer, but the reuse test asks two things:
+      // is the timer alive, and does it still poll the keys this arm wants?
+      // The keys sit in the timer's closure, so a keys mismatch makes even a
+      // LIVE timer non-reusable. Stop it before replacing it -- an overwritten
+      // repeater would keep polling the old modifier forever -- then record
+      // the new keys and recreate. `wanted` only ever holds literals from
+      // holdKeysByModifier, so the Lua gate holds.
+      " local wanted = '" + holdKeys[0] + "|" + holdKeys[1] + "';" +
       " local reusable = false;" +
-      " if s.timer ~= nil then reusable = pcall(function() s.timer:set_enabled(false) end) end;" +
+      " if s.timer ~= nil and s.hold_keys == wanted then" +
+      "   reusable = pcall(function() s.timer:set_enabled(false) end)" +
+      " end;" +
       " if not reusable then" +
+      root.luaStopTimer("s") +
+      "   s.hold_keys = wanted;" +
       "   s.timer = hl.timer(function()" +
       "     local c = _G.__m4rone_slicetab; if not c or not c.timer then return end;" +
       // Escape first: anyone cancelling does not want the following release to
@@ -814,7 +916,7 @@ Item {
       // reveal message per burst. The burst token is used, not the per-Tab
       // token, so a Tab arriving between the send and its delivery cannot
       // orphan the message.
-      "     if hl.is_key_down('Alt_L') or hl.is_key_down('Alt_R') then" +
+      "     if " + root.luaHoldKeyTest() + " then" +
       "       if not c.revealed then" +
       "         c.ticks = (c.ticks or 0) + 1;" +
       "         if c.ticks >= " + root.revealDelayTicks +
@@ -875,8 +977,8 @@ Item {
     // does nothing at all while the watcher is being armed, and nothing ever
     // if arming fails twice -- the row would then only close on release.
     command: root.hyprEval(
-      "error('alt=' .. tostring(hl.is_key_down(\"Alt_L\") or hl.is_key_down(\"Alt_R\"))" +
-      " .. ',esc=' .. tostring(hl.is_key_down(\"Escape\")))")
+      "error('alt=' .. tostring(" + root.luaHoldKeyTest() + ")" +
+      " .. ',esc=' .. tostring(hl.is_key_down('Escape')))")
     // The opened check is deliberately at both exit and handling: a probe that
     // arrives after closing must do nothing more.
     onRunningChanged: { if (root.opened) root.whenIdle(altProbe, root.afterAltProbe) }

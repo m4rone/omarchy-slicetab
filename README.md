@@ -98,6 +98,31 @@ actions. That order is required for each key: native `cycle_next()`, native
 `bring_to_top()`, then the shell notification. The notification is deliberately
 last so the row reads the focus change that Hyprland has already completed.
 
+## Updating
+
+A first install needs no restart. After `omarchy plugin update`, run
+`omarchy restart shell`: the shell survives the update, but it can keep the
+already-loaded old instance answering until it restarts.
+
+## A different modifier
+
+Alt is the default. If you bind the switcher to another modifier, tell the
+plugin. Otherwise the hold watcher polls the wrong key, sees it up on the
+first tick, and closes the row at once.
+
+1. Bind the keys you want, for example `SUPER + TAB` and `SUPER + ESCAPE`.
+2. Add `modifier` to this plugin's entry in `~/.config/omarchy/shell.json`:
+
+```json
+"plugins": [
+  { "id": "m4rone.slicetab", "modifier": "SUPER" }
+]
+```
+
+Accepted values: `ALT`, `SUPER`, `CTRL`, `SHIFT`. Any other value falls back
+to `ALT`. The key bindings and the `modifier` value must name the same key.
+The file hot-reloads on save.
+
 ## Controls
 
 | Key | What happens |
@@ -132,7 +157,12 @@ questions, so Escape keeps working in that degraded mode too.
 
 - Omarchy 4 with `omarchy-shell`
 - Hyprland 0.56 or newer (`hl.is_key_down` was added after 0.55)
-- `hyprctl`, `jq`, Bash, and GNU coreutils (`timeout`)
+- `hyprctl`, `jq`, Bash, and GNU coreutils (`timeout`) — all four are hard
+  dependencies of the `omarchy` package, so every Omarchy 4 install has them
+
+The plugin checks the Hyprland requirement once at startup. On an older
+Hyprland it disables itself and shows one notification; native Alt-Tab keeps
+working, only the preview row stays away.
 
 Escape cancels while you are still holding Alt and returns you to the window the
 sequence started from. The overlay never takes keyboard focus, so by itself it

@@ -217,15 +217,21 @@ Item {
     id: readProc
     command: ["bash", "-c", [
       "set -o pipefail",
-      "hy() { timeout --kill-after=0.25s 1s hyprctl -j \"$@\"; }",
+      "LC_ALL=C",
+      // Limit+1 plus an explicit byte test rejects oversized captures
+      // deterministically, without relying on SIGPIPE timing.
+      "hy() { local o; o=$(timeout --kill-after=0.25s 1s hyprctl -j \"$@\" | head -c 1048577) || return; [ ${#o} -le 1048576 ] || return 1; printf %s \"$o\"; }",
       "before=$(hy activewindow) || exit",
       "clients=$(hy clients) || exit",
       "after=$(hy activewindow) || exit",
-      "jq -cn --argjson b \"$before\" --argjson c \"$clients\" --argjson a \"$after\" "
+      // Bound the result before the QML collector can receive it.
+      "r=$(jq -cn --argjson b \"$before\" --argjson c \"$clients\" --argjson a \"$after\" "
         + "'select(($b.workspace.name // \"\") != \"\" "
         + "and ($b.workspace.id == $a.workspace.id) "
         + "and ($b.workspace.name == $a.workspace.name)) "
-        + "| {active:$a,clients:$c}'"
+        + "| {active:$a,clients:$c}' | head -c 2097153) || exit",
+      "[ ${#r} -le 2097152 ] || exit 1",
+      "printf %s \"$r\""
     ].join("; ")]
     onRunningChanged: root.whenIdle(readProc, root.restartPendingRead)
     stdout: StdioCollector {

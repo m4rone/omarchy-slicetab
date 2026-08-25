@@ -158,6 +158,15 @@ not a keyboard grab by the overlay, so switching keeps working.
   event. Those events cross an IPC socket, so this is strong leak prevention,
   not a compositor-level zero-frame security boundary.
 
+## Remove
+
+```bash
+omarchy plugin remove m4rone.slicetab
+```
+
+Then delete the three `m4rone.slicetab` bindings from
+`~/.config/hypr/bindings.lua`. The plugin writes no other configuration.
+
 ## Licence
 
 MIT.
